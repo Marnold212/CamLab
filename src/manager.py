@@ -8,6 +8,12 @@ import os
 import sys
 from labjack import ljm
 import numpy as np
+from src.K64F_Functions import *
+from src.Mbed_device import Mbed_Device
+
+from serial.serialutil import SerialException
+import serial.tools.list_ports as port_list
+import serial
 
 log = logging.getLogger(__name__)
 
@@ -112,28 +118,53 @@ class Manager(QObject):
         enabledDevices = self.deviceTableModel.enabledDevices()
         enabledDeviceList = []
         for device in enabledDevices:
-            name = device["name"]
-            id = device["id"]
-            connection = device["connection"]
+            if(device["Device Type"] == "Labjack T7"):
+                name = device["name"]
+                id = device["id"]
+                connection = device["connection"]
 
-            # Function required HERE to generate addresses from acquisition table data.
-            aAddresses = [46000, 46002, 46004, 46006, 46008, 46010, 46012, 46014]
-            dt = ljm.constants.FLOAT32
-            aDataTypes = [dt, dt, dt, dt, dt, dt, dt, dt]
+                # Function required HERE to generate addresses from acquisition table data.
+                aAddresses = [46000, 46002, 46004, 46006, 46008, 46010, 46012, 46014]
+                dt = ljm.constants.FLOAT32
+                aDataTypes = [dt, dt, dt, dt, dt, dt, dt, dt]
 
-            self.devices[name] = Device(id, connection, aAddresses, aDataTypes)
-            log.info("Device instance instantiated for device named " + name + ".")
-            self.deviceThread[name] = QThread(parent=self)
-            log.info("Device thread created for device named " + name + ".")
-            self.devices[name].moveToThread(self.deviceThread[name])
-            self.deviceThread[name].start()
-            log.info("Device thread started for device named " + name + ".")
+                self.devices[name] = Device(id, connection, aAddresses, aDataTypes)
+                log.info("Device instance instantiated for device named " + name + ".")
+                self.deviceThread[name] = QThread(parent=self)
+                log.info("Device thread created for device named " + name + ".")
+                self.devices[name].moveToThread(self.deviceThread[name])
+                self.deviceThread[name].start()
+                log.info("Device thread started for device named " + name + ".")
 
-            # Emit signal to connect sample timer to slot for the current device object.
-            self.connectSampleTimer.emit(name)
+                # Emit signal to connect sample timer to slot for the current device object.
+                self.connectSampleTimer.emit(name)
 
-            # Connections.
-            self.devices[name].emitData.connect(self.assembly.updateNewData)
+                # Connections.
+                self.devices[name].emitData.connect(self.assembly.updateNewData)
+           
+            elif(device["Device Type"] == "Mbed K64F"):
+                name = device["name"]
+                id = device["id"]
+                connection = device["connection"]
+
+                # Function required HERE to generate addresses from acquisition table data.
+                K64F_ADC_Address = "0x1FFF0000"
+                dt = ljm.constants.FLOAT32
+                aDataTypes = [dt, dt, dt, dt, dt, dt, dt, dt]
+
+                self.devices[name] = Mbed_Device(id, connection, K64F_ADC_Address, aDataTypes, device["address"])
+                log.info("Device instance instantiated for device named " + name + ".")
+                self.deviceThread[name] = QThread(parent=self)
+                log.info("Device thread created for device named " + name + ".")
+                self.devices[name].moveToThread(self.deviceThread[name])
+                self.deviceThread[name].start()
+                log.info("Device thread started for device named " + name + ".")
+
+                # Emit signal to connect sample timer to slot for the current device object.
+                self.connectSampleTimer.emit(name)
+
+                # Connections.
+                self.devices[name].emitData.connect(self.assembly.updateNewData)
 
     def loadDevicesFromConfiguration(self):
         # Find all devices listed in the configuration file.
@@ -143,32 +174,53 @@ class Manager(QObject):
                 deviceInformation["connect"] = True
                 deviceInformation["name"] = device
                 deviceInformation["id"] = self.configuration["devices"][device]["id"]
+                deviceInformation["Device Type"] = self.configuration["devices"][device]["Device Type"]
                 deviceInformation["connection"] = self.configuration["devices"][device]["connection"]
                 deviceInformation["address"] = self.configuration["devices"][device]["address"]
                 deviceInformation["status"] = False
-                # Try to connect to each device using the ID.
-                try:
-                    # If the connection is successful, set the device status to true.
-                    handle = ljm.open(7, int(deviceInformation["connection"]), int(deviceInformation["id"]))
-                    name = ljm.eReadNameString(handle, "DEVICE_NAME_DEFAULT")
-                    ljm.close(handle)
-                    deviceInformation["status"] = True
-                except ljm.LJMError:
-                    # Otherwise log the exception and set the device status to false.
-                    ljme = sys.exc_info()[1]
-                    log.warning(ljme) 
-                except Exception:
-                    e = sys.exc_info()[1]
-                    log.warning(e)
-                # Update acquisition table models and add TableView to TabWidget by emitting the appropriate Signal. Any changes in the table will be reflected immediately in the underlying configuration data.
-                self.deviceTableModel.appendRow(deviceInformation)
-                self.acquisitionModels[name] = AcquisitionTableModel(self.configuration["devices"][name]["acquisition"])
-                self.addAcquisitionTable.emit(name)
+                if(deviceInformation["Device Type"] == "Labjack T7"):
+                    # Try to connect to each device using the ID.
+                    try:
+                        # If the connection is successful, set the device status to true.
+                        handle = ljm.open(7, int(deviceInformation["connection"]), int(deviceInformation["id"]))
+                        name = ljm.eReadNameString(handle, "DEVICE_NAME_DEFAULT")
+                        ljm.close(handle)
+                        deviceInformation["status"] = True
+                    except ljm.LJMError:
+                        # Otherwise log the exception and set the device status to false.
+                        ljme = sys.exc_info()[1]
+                        log.warning(ljme) 
+                    except Exception:
+                        e = sys.exc_info()[1]
+                        log.warning(e)
+                    # Update acquisition table models and add TableView to TabWidget by emitting the appropriate Signal. Any changes in the table will be reflected immediately in the underlying configuration data.
+                    self.deviceTableModel.appendRow(deviceInformation)
+                    self.acquisitionModels[name] = AcquisitionTableModel(self.configuration["devices"][name]["acquisition"])
+                    self.addAcquisitionTable.emit(name)
+
+                elif(deviceInformation["Device Type"] == "Mbed K64F"):
+                    default_baudrate = 115200 # Assume all boards use default baudrate of 9600 
+                    try:
+                        Serial_device = serial.Serial(port=deviceInformation["address"], baudrate=default_baudrate, bytesize=8, timeout=1, stopbits=serial.STOPBITS_ONE)
+                        name = "Mbed_TBA"
+                        Serial_device.close()
+                    except SerialException:
+                        # Otherwise log the exception and set the device status to false.
+                        ljme = sys.exc_info()[1]
+                        log.warning(ljme) 
+                    except Exception:
+                        e = sys.exc_info()[1]
+                        log.warning(e)
+                    # Update acquisition table models and add TableView to TabWidget by emitting the appropriate Signal. Any changes in the table will be reflected immediately in the underlying configuration data.
+                    self.deviceTableModel.appendRow(deviceInformation)
+                    self.acquisitionModels[name] = AcquisitionTableModel(self.configuration["devices"][name]["acquisition"])
+                    self.addAcquisitionTable.emit(name)
+
             log.info("Configuration loaded.")
         self.updateAcquisitionTabs.emit()
         self.updateUI.emit(self.configuration)
 
-
+    
     def findDevices(self):
         """Method to find all available devices and return an array of connection properties.
         USB connections are prioritised over Ethernet and WiFi connections to minimise jitter."""
@@ -190,7 +242,7 @@ class Manager(QObject):
             ID_Existing.append(device["id"])
 
         # Check for USB connectons first and add to available device list if not already enabled.
-        log.info("Scanning for additional USB devices.")
+        log.info("Scanning for additional Labjack USB devices.")
         info = ljm.listAll(7, 1)
         devicesUSB = info[0]
         connectionType = info[2]
@@ -204,6 +256,7 @@ class Manager(QObject):
                 deviceInformation["name"] = ljm.eReadNameString(handle, "DEVICE_NAME_DEFAULT")
                 ljm.close(handle)
                 deviceInformation["id"] = ID_USB[i]
+                deviceInformation["Device Type"] = "Labjack T7"
                 deviceInformation["connection"] = connectionType[i]
                 deviceInformation["address"] = "N/A"
                 deviceInformation["status"] = True
@@ -214,6 +267,7 @@ class Manager(QObject):
                 acquisitionTable = copy.deepcopy(self.defaultAcquisitionTable)
                 newDevice = {
                     "id": deviceInformation["id"],
+                    "Device Type" : deviceInformation["Device Type"],
                     "connection": deviceInformation["connection"],
                     "address": deviceInformation["address"],
                     "acquisition": acquisitionTable
@@ -231,10 +285,10 @@ class Manager(QObject):
                 self.addAcquisitionTable.emit(name)
                 self.updateAcquisitionTabs.emit()
                 self.updateUI.emit(self.configuration)
-        log.info("Found " + str(devicesUSB) + " USB device(s).")
+        log.info("Found " + str(devicesUSB) + " Labjack USB device(s).")
 
         # Check TCP and add to list if not already in available device list.
-        log.info("Scanning for TCP devices.")
+        log.info("Scanning for Labjack TCP devices.")
         info = ljm.listAll(7, 2)
         numDevicesTCP = 0
         devicesTCP = info[0]
@@ -251,6 +305,7 @@ class Manager(QObject):
                 deviceInformation["name"] = ljm.eReadNameString(handle, "DEVICE_NAME_DEFAULT")
                 ljm.close(handle)
                 deviceInformation["id"] = ID_TCP[i]
+                deviceInformation["Device Type"] = "Labjack T7"
                 deviceInformation["connection"] = connectionType[i]
                 deviceInformation["address"] =  ljm.numberToIP(IP[i])
                 deviceInformation["status"] = True
@@ -261,6 +316,7 @@ class Manager(QObject):
                 acquisitionTable = copy.deepcopy(self.defaultAcquisitionTable)
                 newDevice = {
                     "id": deviceInformation["id"],
+                    "Device Type" : deviceInformation["Device Type"],
                     "connection": deviceInformation["connection"],
                     "address": deviceInformation["address"],
                     "acquisition": acquisitionTable
@@ -278,7 +334,64 @@ class Manager(QObject):
                 self.addAcquisitionTable.emit(name)
                 self.updateAcquisitionTabs.emit()
                 self.updateUI.emit(self.configuration)
-        log.info("Found " + str(numDevicesTCP) + " TCP device(s).")
+        log.info("Found " + str(numDevicesTCP) + " Labjack TCP device(s).")
+
+        # Wasn't working as part of a function, although other fixes have since been made 
+        log.info("Scanning for additional Mbed USB devices.")
+        
+        Num_Mbed_Devices = 0
+        COM_PORTS = []
+        connectionType = []  # Create a unique value for USB K64F devices which trigger new functions  
+        # Say 11 = mbed USB, 10 = mbed ANY, 12 = mbed TCP, 14 = mbed WIFI 
+        VID_PID = []   # USB VID:PID are the Vendor/Product ID respectively - smae for each K64F Board? - You can determine HIC ID from last 8 digits of Serial Number? 
+        # Note that the 0240 at the start of Serial Number refers to the K64F Family 
+        ID_USB = []   # ID_USB will be the USB serial number - should be unique
+        Baud_Rate = []  # For now assume all operating at 9600 - may change later so might need to add later on 
+        # IP = []  # Don't think we need this for USB Serial(Mbed) devices 
+        Num_Mbed_Devices, COM_PORTS, connectionType, ID_USB, VID_PID = List_All_Mbed_USB_Devices()
+
+        for i in range(Num_Mbed_Devices):
+            if ID_USB[i] not in ID_Existing:
+                deviceInformation = {}
+                deviceInformation["connect"] = False
+                # handle = ljm.open(7, 1, ID_USB[i])
+                # deviceInformation["name"] = ljm.eReadNameString(handle, "DEVICE_NAME_DEFAULT")
+                # ljm.close(handle)
+                deviceInformation["name"] = "Mbed_TBA"
+                deviceInformation["id"] = ID_USB[i]
+                if(ID_USB[i][0:4] == "0240"):
+                    deviceInformation["Device Type"] = "Mbed K64F"
+                else:
+                    deviceInformation["Device Type"] = ID_USB[i][0:4]
+                deviceInformation["connection"] = connectionType[i]
+                deviceInformation["address"] = COM_PORTS[i]
+                deviceInformation["status"] = True
+                self.deviceTableModel.appendRow(deviceInformation)
+                self.updateUI.emit(self.configuration)
+                
+                # Make a deep copy to avoid pointers in the YAML output.
+                acquisitionTable = copy.deepcopy(self.defaultAcquisitionTable)
+                newDevice = {
+                    "id": deviceInformation["id"],
+                    "Device Type" : deviceInformation["Device Type"],
+                    "connection": deviceInformation["connection"],
+                    "address": deviceInformation["address"],
+                    "acquisition": acquisitionTable
+                }
+
+                # If no previous devices are configured, add the "devices" key to the configuration.
+                name = deviceInformation["name"]
+                if "devices" not in self.configuration:
+                    self.configuration["devices"] = {name: newDevice} 
+                else:
+                    self.configuration["devices"][name] = newDevice 
+                # Update acquisition table models and add TableView to TabWidget by emitting the appropriate Signal. Any changes in the table will be reflected immediately in the underlying configuration data.
+                self.acquisitionModels[name] = AcquisitionTableModel(self.configuration["devices"][name]["acquisition"])
+                log.info(name)
+                self.addAcquisitionTable.emit(name)
+                self.updateAcquisitionTabs.emit()
+                self.updateUI.emit(self.configuration)
+        log.info("Found " + str(Num_Mbed_Devices) + " Mbed USB device(s).")
 
         # Boolean to indicate that the device list has finished refreshing.
         self.refreshing = False
