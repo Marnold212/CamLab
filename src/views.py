@@ -1,6 +1,12 @@
 from PySide6.QtWidgets import QTableView, QHeaderView
 from src.delegates import CheckBoxDelegate, ConnectionIconDelegate, StatusIconDelegate, FloatValidatorDelegate, StringDelegate
 
+
+import logging
+import sys
+
+log = logging.getLogger(__name__)
+
 class DeviceTableView(QTableView):
 
     def __init__(self, configuration, data=[], parent=None):

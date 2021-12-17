@@ -2,7 +2,7 @@ from ctypes.wintypes import HANDLE
 from serial.serialutil import SerialException
 import serial.tools.list_ports as port_list
 import serial
-import time
+import numpy as np 
 
 # Scans connected USB Devices and attempts to connect to any with name beginning "mbed Serial Port" - may not be best method
 # Returns an array with [0]: No. mbed devices connected over USB, [1]: Array corresponding to COM_PORT for each device 
@@ -213,16 +213,25 @@ def _Serial_Write(Serial_Device, Instruction, Target_Address, Hex_Value, Expecte
 
     byte_Command = (b'%b%b%b\n' % (bytes.fromhex(Instruction), bytes.fromhex(Target_Address), bytes.fromhex(Hex_Value)))
     return _Serial_Command_Response(Serial_Device, byte_Command, Expected_Bytes)
-
+    
 # Returns a list of the raw 16 bit unsigned values from ADC channels 0-7
+# Returns 4 x uint32_t : Note the effect that this has on the received byte order: V2, V1, V4, V3, etc. 
 def Read_8_ADC_U16_Values(Serial_Device, Target_Address):
     if(len(Target_Address) != 10 or not Target_Address.startswith("0x")):
         raise Exception ("Register Address should be 4 bytes/8 hex digits long and be in format 0x00000000")
     raw_data = Read_128_Reg(Serial_Device, Target_Address)
     data = []
-    for x in range(8):
+    for x in range(0, 8, 2):
+        y = x+1   # Due to byte order of device - 
+        data.append(Hex_To_Dec(raw_data[(4*y) + 0 : (4*y) + 4]))
         data.append(Hex_To_Dec(raw_data[(4*x) + 0 : (4*x) + 4]))
     return data
+
+# Assumes Data recieved is from an AD7606
+def Convert_ADC_Raw(Raw_Reading, ADC_Resolution, Max_Min_Voltage): 
+    Signed_Value = np.int16(Raw_Reading)  
+    quant_step = (2 * Max_Min_Voltage) / (2**ADC_Resolution)
+    return Signed_Value * quant_step
 
 # SPI Message must be given in hex form e.g. (24, A7, 08, 00, FF) -> 24A70800FF etc. 
 def SPI_Write(Serial_Device, SPI_Device, Message):

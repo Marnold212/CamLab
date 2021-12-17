@@ -17,6 +17,7 @@ class Mbed_Device(QObject):
 
     def __init__(self, id, connection, ADC_Address, dataTypes, Com_Port, baudrate=115200):
         super().__init__()
+        self.handle = None  # Stores Pyserial object for communication 
         self.Com_Port = Com_Port
         self.baudrate = baudrate
         self.ADC_Address = ADC_Address
@@ -31,16 +32,20 @@ class Mbed_Device(QObject):
 
     def openConnection(self):
         # Method to open a device connection
-        try:
-            self.handle = serial.Serial(port=self.Com_Port, baudrate=self.baudrate, bytesize=8, timeout=1, stopbits=serial.STOPBITS_ONE)
-            self.name = "Mbed_TBA"
-            log.info("Connected to " + self.name + ".")
-        except SerialException:
-            ljme = sys.exc_info()[1]
-            log.warning(ljme) 
-        except Exception:
-            e = sys.exc_info()[1]
-            log.warning(e)
+        if self.connection == 11: # Mbed USB Device defined as 11 
+            try:
+                self.handle = serial.Serial(port=self.Com_Port, baudrate=self.baudrate, bytesize=8, timeout=1, stopbits=serial.STOPBITS_ONE)
+                self.name = "Mbed_TBA"
+                log.info("Connected to " + self.name + ".")
+            except SerialException:
+                ljme = sys.exc_info()[1]
+                log.warning(ljme) 
+            except Exception:
+                e = sys.exc_info()[1]
+                log.warning(e)
+        
+        else: 
+            log.info("Invalid Connection Type")
 
     def initialiseSettings(self):
         # Method to initialise Mbed Device
@@ -48,7 +53,7 @@ class Mbed_Device(QObject):
         # In future, may need to convert Raw ADC values to correct voltages in order to perform onboard control calculations
 
         self.ADCmaxVoltage = 5
-        self.ADCminVoltage = 0
+        self.ADCminVoltage = -1 * self.ADCmaxVoltage
         self.ADCResolution = 16
 
 
@@ -106,7 +111,7 @@ class Mbed_Device(QObject):
 
             for x in range(8):
                 # data[x] = data[x] / (2.**16.) * 5
-                data[x] = self.Convert_ADC_Raw(data[x], self.ADCResolution, self.ADCmaxVoltage, self.ADCminVoltage)
+                data[x] = self.Convert_ADC_Raw(data[x], self.ADCResolution, self.ADCmaxVoltage)
             
             data = np.asarray(data)
             # log.info(data)
@@ -119,5 +124,8 @@ class Mbed_Device(QObject):
             e = sys.exc_info()[1]
             log.warning(e)
         
-    def Convert_ADC_Raw(self, Raw_Reading, ADC_Resolution, ADC_Max_Voltage, ADC_Min_Voltage):
-        return Raw_Reading / (2. ** ADC_Resolution) * (ADC_Max_Voltage - ADC_Min_Voltage) + ADC_Min_Voltage
+        # Assumes Data recieved is from an AD7606
+    def Convert_ADC_Raw(self, Raw_Reading, ADC_Resolution, Max_Min_Voltage): 
+        Signed_Value = np.int16(Raw_Reading)  
+        quant_step = (2 * Max_Min_Voltage) / (2**ADC_Resolution)
+        return Signed_Value * quant_step
