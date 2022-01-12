@@ -456,7 +456,7 @@ class Manager(QObject):
                 self.configurationChanged.emit(self.configuration)    
                 self.settings.setValue("configurationPath", loadConfigurationPath)
                 self.loadDevicesFromConfiguration()
-        except FileNotFoundError:
+        except (FileNotFoundError, TypeError):
             log.warning("Previous configuration file not found.")  
             self.initialiseDefaultConfiguration()
 
