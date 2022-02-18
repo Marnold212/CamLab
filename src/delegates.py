@@ -81,6 +81,16 @@ class ConnectionIconDelegate(QStyledItemDelegate):
                 icon = QIcon("assets/cable_white_24dp.svg")
             elif index.data(Qt.DisplayRole) == 4:
                 icon = QIcon("assets/wifi_white_24dp.svg")
+
+            # Following are Mbed Devices 
+            elif index.data(Qt.DisplayRole) == 10:
+                icon = QIcon("assets/sensors_off_white_24dp.svg")
+            elif index.data(Qt.DisplayRole) == 11: 
+                icon = QIcon("assets/usb_white_24dp.svg")  # Mbed USB Device 
+            elif index.data(Qt.DisplayRole) == 13:
+                icon = QIcon("assets/cable_white_24dp.svg")
+            elif index.data(Qt.DisplayRole) == 14:
+                icon = QIcon("assets/wifi_white_24dp.svg")
         else:
             if index.data(Qt.DisplayRole) == 0:
                 icon = QIcon("assets/sensors_off_black_24dp.svg")
@@ -89,6 +99,16 @@ class ConnectionIconDelegate(QStyledItemDelegate):
             elif index.data(Qt.DisplayRole) == 3:
                 icon = QIcon("assets/cable_black_24dp.svg")
             elif index.data(Qt.DisplayRole) == 4:
+                icon = QIcon("assets/wifi_black_24dp.svg")
+
+            # Following are Mbed Devices 
+            elif index.data(Qt.DisplayRole) == 10: 
+                icon = QIcon("assets/sensors_off_black_24dp.svg")
+            elif index.data(Qt.DisplayRole) == 11: 
+                icon = QIcon("assets/usb_black_24dp.svg")  # Mbed USB Device 
+            elif index.data(Qt.DisplayRole) == 13:
+                icon = QIcon("assets/cable_black_24dp.svg")
+            elif index.data(Qt.DisplayRole) == 14:
                 icon = QIcon("assets/wifi_black_24dp.svg")
         icon.paint(painter, option.rect, Qt.AlignCenter)
 

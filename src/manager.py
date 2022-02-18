@@ -13,6 +13,7 @@ import numpy as np
 import time
 import re
 from datetime import datetime
+import src.K64F_Functions as K64F_Functions
 
 log = logging.getLogger(__name__)
 
@@ -258,9 +259,74 @@ class Manager(QObject):
         # Add LabJack USB devices, then TCP devices (USB preferred due to reduced latency).
         self.addLJDevices("USB")
         self.addLJDevices("TCP")
+        
+        self.MBED_addUSBDevices(9600)
 
         # Boolean to indicate that the device list has finished refreshing.
         self.refreshing = False
+
+
+    def MBED_addUSBDevices(self, baudrate=115200):
+        # Get a list of already existing devices.
+        existingDevices = self.deviceTableModel._data
+        ID_Existing = []
+        for device in existingDevices:
+            ID_Existing.append(device["id"])
+        log.info("Scanning for additional Mbed USB devices.")
+        Num_Mbed_Devices = 0
+        COM_PORTS = []
+        connectionType = []  # Create a unique value for USB K64F devices which trigger new functions  
+        # Say 11 = mbed USB, 10 = mbed ANY, 12 = mbed TCP, 14 = mbed WIFI 
+        VID_PID = []   # USB VID:PID are the Vendor/Product ID respectively - smae for each K64F Board? - You can determine HIC ID from last 8 digits of Serial Number? 
+        # Note that the 0240 at the start of Serial Number refers to the K64F Family 
+        ID_USB = []   # ID_USB will be the USB serial number - should be unique
+        Baud_Rate = []  # For now assume all operating at 9600 - may change later so might need to add later on 
+        # IP = []  # Don't think we need this for USB Serial(Mbed) devices 
+        Num_Mbed_Devices, COM_PORTS, connectionType, ID_USB, VID_PID = K64F_Functions.List_All_Mbed_USB_Devices(baudrate)
+        print(Num_Mbed_Devices)
+        for i in range(Num_Mbed_Devices):
+            if ID_USB[i] not in ID_Existing:
+                deviceInformation = {}
+                deviceInformation["connect"] = False
+                deviceInformation["name"] = "Mbed_TBA"
+                deviceInformation["id"] = ID_USB[i]
+                if(ID_USB[i].startswith("0240")):
+                    deviceInformation["Device Type"] = "Mbed K64F"
+                else:
+                    deviceInformation["Device Type"] = ID_USB[i][0:4]
+                deviceInformation["connection"] = connectionType[i]
+                deviceInformation["address"] = COM_PORTS[i]
+                deviceInformation["status"] = True
+                self.deviceTableModel.appendRow(deviceInformation)
+                self.updateUI.emit(self.configuration)
+                
+                # Make a deep copy to avoid pointers in the YAML output.
+                acquisitionTable = copy.deepcopy(self.defaultAcquisitionTable)
+                controlTable = copy.deepcopy(self.defaultControlTable)
+                controlTable[0]["name"] = deviceInformation["name"] + " C1"
+                controlTable[1]["name"] = deviceInformation["name"] + " C2"
+                newDevice = {
+                    "id": deviceInformation["id"],
+                    "connection": deviceInformation["connection"],
+                    "address": deviceInformation["address"],
+                    "acquisition": acquisitionTable,
+                    "control" : controlTable
+                }
+
+                # If no previous devices are configured, add the "devices" key to the configuration.
+                name = deviceInformation["name"]
+                if "devices" not in self.configuration:
+                    self.configuration["devices"] = {name: newDevice} 
+                else:
+                    self.configuration["devices"][name] = newDevice 
+
+                # Update acquisition and control table models and add to TabWidget by emitting the appropriate Signal.
+                self.acquisitionModels[name] = AcquisitionTableModel(self.configuration["devices"][name]["acquisition"])
+                self.controlTableModels[name] = ControlTableModel(self.configuration["devices"][name]["control"])
+                self.deviceConfigurationAdded.emit(name, self.defaultFeedbackChannel)
+                self.updateDeviceConfigurationTab.emit()
+                self.updateUI.emit(self.configuration)
+        log.info("Found " + str(Num_Mbed_Devices) + " Mbed K64F USB device(s).")
 
     def addLJDevices(self, mode):
         # Get a list of already existing devices.
@@ -268,7 +334,6 @@ class Manager(QObject):
         ID_Existing = []
         for device in existingDevices:
             ID_Existing.append(device["id"])
-        
         # Scan for devices.
         if mode == "USB":
             log.info("Scanning for additional USB devices.")
@@ -280,7 +345,6 @@ class Manager(QObject):
         connectionType = info[2]
         ID = info[3]
         IP = info[4]
-
         # Add devices if not already in device list.
         for i in range(numDevices):
             if ID[i] not in ID_Existing:
