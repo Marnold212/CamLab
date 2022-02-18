@@ -38,7 +38,7 @@ class Mbed_USB_Device(QObject):
         # self.executeLua()
 
     def openConnection(self):
-        # Method to open a device connectio
+        # Method to open a device connection
         if self.connection == 11: # Mbed USB Device defined as 11 
             try:
                 self.handle = serial.Serial(port=self.Com_Port, baudrate=self.baudrate, bytesize=8, timeout=1, stopbits=serial.STOPBITS_ONE)
@@ -61,62 +61,67 @@ class Mbed_USB_Device(QObject):
             self.ADC_Data_Offset = 4
             self.ADC_Data_Bytes = 16
 
-    def loadLua(self):
-        try:
-            # Read the Lua script.
-            with open(self.script, "r") as f:
-                lua = f.read()
-            lua_length = len(lua)
+    # def loadLua(self):
+    #     try:
+    #         # Read the Lua script.
+    #         with open(self.script, "r") as f:
+    #             lua = f.read()
+    #         lua_length = len(lua)
 
-            # Disable a running script by writing 0 to LUA_RUN twice. Wait for the Lua VM to shut down (and some T7 firmware versions need
-            # a longer time to shut down than others) in between the repeated commands.
-            ljm.eWriteName(self.handle, "LUA_RUN", 0)
-            sleep(2)
-            ljm.eWriteName(self.handle, "LUA_RUN", 0)
+    #         # Disable a running script by writing 0 to LUA_RUN twice. Wait for the Lua VM to shut down (and some T7 firmware versions need
+    #         # a longer time to shut down than others) in between the repeated commands.
+    #         ljm.eWriteName(self.handle, "LUA_RUN", 0)
+    #         sleep(2)
+    #         ljm.eWriteName(self.handle, "LUA_RUN", 0)
 
-            # Write the size and the Lua Script to the device.
-            ljm.eWriteName(self.handle, "LUA_SOURCE_SIZE", lua_length)
-            ljm.eWriteNameByteArray(
-                self.handle, "LUA_SOURCE_WRITE", lua_length, bytearray(lua, encoding="utf8")
-            )
+    #         # Write the size and the Lua Script to the device.
+    #         ljm.eWriteName(self.handle, "LUA_SOURCE_SIZE", lua_length)
+    #         ljm.eWriteNameByteArray(
+    #             self.handle, "LUA_SOURCE_WRITE", lua_length, bytearray(lua, encoding="utf8")
+    #         )
 
-            # Start the script with debug output disabled.
-            ljm.eWriteName(self.handle, "LUA_DEBUG_ENABLE", 1)
-            ljm.eWriteName(self.handle, "LUA_DEBUG_ENABLE_DEFAULT", 1)
-            log.info("Lua script loaded.")
+    #         # Start the script with debug output disabled.
+    #         ljm.eWriteName(self.handle, "LUA_DEBUG_ENABLE", 1)
+    #         ljm.eWriteName(self.handle, "LUA_DEBUG_ENABLE_DEFAULT", 1)
+    #         log.info("Lua script loaded.")
 
-            # Set the control loop interval at address 46180 in microseconds.
-            ljm.eWriteAddress(self.handle, 46180, 0, int((1/self.controlRate)*1000000))
-        except ljm.LJMError:
-            # Otherwise log the exception.
-            ljme = sys.exc_info()[1]
-            log.warning(ljme) 
-        except Exception:
-            e = sys.exc_info()[1]
-            log.warning(e)
+    #         # Set the control loop interval at address 46180 in microseconds.
+    #         ljm.eWriteAddress(self.handle, 46180, 0, int((1/self.controlRate)*1000000))
+    #     except ljm.LJMError:
+    #         # Otherwise log the exception.
+    #         ljme = sys.exc_info()[1]
+    #         log.warning(ljme) 
+    #     except Exception:
+    #         e = sys.exc_info()[1]
+    #         log.warning(e)
 
-    def executeLua(self):
-        # Method to execute a Lua script.
-        try:
-            ljm.eWriteName(self.handle, "LUA_RUN", 1)
-            log.info("Lua script executed.")
-        except ljm.LJMError:
-            # Otherwise log the exception.
-            ljme = sys.exc_info()[1]
-            log.warning(ljme) 
-        except Exception:
-            e = sys.exc_info()[1]
-            log.warning(e)
+    # def executeLua(self):
+    #     # Method to execute a Lua script.
+    #     try:
+    #         ljm.eWriteName(self.handle, "LUA_RUN", 1)
+    #         log.info("Lua script executed.")
+    #     except ljm.LJMError:
+    #         # Otherwise log the exception.
+    #         ljme = sys.exc_info()[1]
+    #         log.warning(ljme) 
+    #     except Exception:
+    #         e = sys.exc_info()[1]
+    #         log.warning(e)
         
     def readValues(self):
         # Method to read registers on device.
         try:
             # Read from the device and apply slope and offsets.
-            self.handle = ljm.open(7, self.connection, self.id)
-            self.raw = np.asarray(ljm.eReadAddresses(self.handle, self.numFrames, self.addresses, self.dataTypes))
+            # self.handle = ljm.open(7, self.connection, self.id)
+            # self.raw = np.asarray(ljm.eReadAddresses(self.handle, self.numFrames, self.addresses, self.dataTypes))
+            # self.data = self.slopes*(self.raw - self.offsets)
+            # self.emitData.emit(self.name, self.data)
+
+            Time, Voltages, PWM_Duties = K64F_Functions.Read_Sample(self.handle, 32)
+            self.raw = np.asarray(Voltages)
             self.data = self.slopes*(self.raw - self.offsets)
             self.emitData.emit(self.name, self.data)
-        except ljm.LJMError:
+        except SerialException:
             # Otherwise log the exception.
             ljme = sys.exc_info()[1]
             log.warning(ljme) 

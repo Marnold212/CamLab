@@ -14,6 +14,9 @@ import time
 import re
 from datetime import datetime
 import src.K64F_Functions as K64F_Functions
+from src.Mbed_USB_Device import Mbed_USB_Device
+import serial 
+from serial.serialutil import SerialException
 
 log = logging.getLogger(__name__)
 
@@ -170,40 +173,77 @@ class Manager(QObject):
         header = self.createHeader()
         self.assembly.writeHeader(header)
 
+        print(enabledDevices)
         # For each device set the acquisition array and execute in a separate thread.
         for device in enabledDevices:
-            name = device["name"]
-            id = device["id"]
-            connection = device["connection"]
-            
-            # Generate addresses for acqusition.
-            channels, names, units, slopes, offsets, autozero = self.acquisitionModels[name].enabledChannels()
-            addresses = []
-            dataTypes = []
-            dt = ljm.constants.FLOAT32
-            for channel in channels:
-                address = int(re.findall(r'\d+', channel)[0])*2 # Multiply by two to get correct LJ address for AIN.
-                addresses.append(address)
-                dataTypes.append(dt)
-            controlRate = self.configuration["global"]["controlRate"]
+            if(device["Device Type"] == "Labjack T7"):
+                name = device["name"]
+                id = device["id"]
+                connection = device["connection"]
+                
+                # Generate addresses for acqusition.
+                channels, names, units, slopes, offsets, autozero = self.acquisitionModels[name].enabledChannels()
+                addresses = []
+                dataTypes = []
+                dt = ljm.constants.FLOAT32
+                for channel in channels:
+                    address = int(re.findall(r'\d+', channel)[0])*2 # Multiply by two to get correct LJ address for AIN.
+                    addresses.append(address)
+                    dataTypes.append(dt)
+                controlRate = self.configuration["global"]["controlRate"]
 
-            # Create device instance and move to thread.
-            self.devices[name] = Device(name, id, connection, channels, addresses, dataTypes, slopes, offsets, autozero, controlRate)
-            log.info("Device instance created for device named " + name + ".")
-            self.deviceThreads[name] = QThread(parent=self)
-            log.info("Device thread created for device named " + name + ".")
-            self.devices[name].moveToThread(self.deviceThreads[name])
-            self.deviceThreads[name].start()
-            log.info("Device thread started for device named " + name + ".")
+                # Create device instance and move to thread.
+                self.devices[name] = Device(name, id, connection, channels, addresses, dataTypes, slopes, offsets, autozero, controlRate)
+                log.info("Device instance created for device named " + name + ".")
+                self.deviceThreads[name] = QThread(parent=self)
+                log.info("Device thread created for device named " + name + ".")
+                self.devices[name].moveToThread(self.deviceThreads[name])
+                self.deviceThreads[name].start()
+                log.info("Device thread started for device named " + name + ".")
 
-            # Emit signal to connect sample timer to slot for the current device object.
-            self.timing.controlDevices.connect(self.devices[name].readValues)
-            self.assembly.autozeroDevices.connect(self.devices[name].recalculateOffsets)
+                # Emit signal to connect sample timer to slot for the current device object.
+                self.timing.controlDevices.connect(self.devices[name].readValues)
+                self.assembly.autozeroDevices.connect(self.devices[name].recalculateOffsets)
 
-            # Connections.
-            self.devices[name].emitData.connect(self.assembly.updateNewData)
-            self.devices[name].updateOffsets.connect(self.updateDeviceOffsets)
-            log.info(name + " attached to assembly thread updateNewData method.")
+                # Connections.
+                self.devices[name].emitData.connect(self.assembly.updateNewData)
+                self.devices[name].updateOffsets.connect(self.updateDeviceOffsets)
+                log.info(name + " attached to assembly thread updateNewData method.")
+            elif(device["Device Type"] == "Mbed K64F"):
+                name = device["name"]
+                id = device["id"]
+                connection = device["connection"]
+                Com_Port = device["address"]
+
+                # Generate addresses for acqusition.
+                channels, names, units, slopes, offsets, autozero = self.acquisitionModels[name].enabledChannels()
+                addresses = []
+                dataTypes = []
+                dt = ljm.constants.FLOAT32
+                # for channel in channels:
+                #     address = int(re.findall(r'\d+', channel)[0])*2 # Multiply by two to get correct LJ address for AIN.
+                #     addresses.append(address)
+                #     dataTypes.append(dt)
+                controlRate = self.configuration["global"]["controlRate"]
+
+                # Create device instance and move to thread.
+                print("hi there")
+                self.devices[name] = Mbed_USB_Device(name, id, connection, channels, Com_Port, dataTypes, slopes, offsets, autozero, controlRate, device["baudrate"])
+                log.info("Device instance created for device named " + name + ".")
+                self.deviceThreads[name] = QThread(parent=self)
+                log.info("Device thread created for device named " + name + ".")
+                self.devices[name].moveToThread(self.deviceThreads[name])
+                self.deviceThreads[name].start()
+                log.info("Device thread started for device named " + name + ".")
+
+                # Emit signal to connect sample timer to slot for the current device object.
+                self.timing.controlDevices.connect(self.devices[name].readValues)
+                self.assembly.autozeroDevices.connect(self.devices[name].recalculateOffsets)
+
+                # Connections.
+                self.devices[name].emitData.connect(self.assembly.updateNewData)
+                self.devices[name].updateOffsets.connect(self.updateDeviceOffsets)
+                log.info(name + " attached to assembly thread updateNewData method.")
         log.info("Device threads created.")
 
     def loadDevicesFromConfiguration(self):
@@ -214,29 +254,50 @@ class Manager(QObject):
                 deviceInformation["connect"] = True
                 deviceInformation["name"] = device
                 deviceInformation["id"] = self.configuration["devices"][device]["id"]
+                deviceInformation["Device Type"] = self.configuration["devices"][device]["Device Type"]
                 deviceInformation["connection"] = self.configuration["devices"][device]["connection"]
                 deviceInformation["address"] = self.configuration["devices"][device]["address"]
                 deviceInformation["status"] = False
-                # Try to connect to each device using the ID.
-                try:
-                    # If the connection is successful, set the device status to true.
-                    handle = ljm.open(7, int(deviceInformation["connection"]), int(deviceInformation["id"]))
-                    name = ljm.eReadNameString(handle, "DEVICE_NAME_DEFAULT")
-                    ljm.close(handle)
-                    deviceInformation["status"] = True                  
-                except ljm.LJMError:
-                    # Otherwise log the exception and set the device status to false.
-                    ljme = sys.exc_info()[1]
-                    log.warning(ljme) 
-                except Exception:
-                    e = sys.exc_info()[1]
-                    log.warning(e)
-                # Update acquisition and control table models and add to TabWidget by emitting the appropriate Signal.
-                self.deviceTableModel.appendRow(deviceInformation)
-                self.acquisitionModels[name] = AcquisitionTableModel(self.configuration["devices"][name]["acquisition"])
-                self.controlTableModels[name] = ControlTableModel(self.configuration["devices"][name]["control"])
-                self.deviceConfigurationAdded.emit(name, self.defaultFeedbackChannel)
-                self.setListFeedbackCombobox()
+                if(deviceInformation["Device Type"] == "Labjack T7"):
+                    # Try to connect to each device using the ID.
+                    try:
+                        # If the connection is successful, set the device status to true.
+                        handle = ljm.open(7, int(deviceInformation["connection"]), int(deviceInformation["id"]))
+                        name = ljm.eReadNameString(handle, "DEVICE_NAME_DEFAULT")
+                        ljm.close(handle)
+                        deviceInformation["status"] = True                  
+                    except ljm.LJMError:
+                        # Otherwise log the exception and set the device status to false.
+                        ljme = sys.exc_info()[1]
+                        log.warning(ljme) 
+                    except Exception:
+                        e = sys.exc_info()[1]
+                        log.warning(e)
+                    # Update acquisition and control table models and add to TabWidget by emitting the appropriate Signal.
+                    self.deviceTableModel.appendRow(deviceInformation)
+                    self.acquisitionModels[name] = AcquisitionTableModel(self.configuration["devices"][name]["acquisition"])
+                    self.controlTableModels[name] = ControlTableModel(self.configuration["devices"][name]["control"])
+                    self.deviceConfigurationAdded.emit(name, self.defaultFeedbackChannel)
+                    self.setListFeedbackCombobox()
+                elif(deviceInformation["Device Type"] == "Mbed K64F"):
+                    deviceInformation["baudrate"] = self.configuration["devices"][device]["baudrate"]
+                    try:
+                        Serial_device = serial.Serial(deviceInformation["address"], deviceInformation["baudrate"], bytesize=8, timeout=1, stopbits=serial.STOPBITS_ONE)
+                        name = "Mbed_TBA"
+                        Serial_device.close()
+                    except SerialException:
+                        # Otherwise log the exception and set the device status to false.
+                        ljme = sys.exc_info()[1]
+                        log.warning(ljme) 
+                    except Exception:
+                        e = sys.exc_info()[1]
+                        log.warning(e)
+                    # Update acquisition and control table models and add to TabWidget by emitting the appropriate Signal.
+                    self.deviceTableModel.appendRow(deviceInformation)
+                    self.acquisitionModels[name] = AcquisitionTableModel(self.configuration["devices"][name]["acquisition"])
+                    self.controlTableModels[name] = ControlTableModel(self.configuration["devices"][name]["control"])
+                    self.deviceConfigurationAdded.emit(name, self.defaultFeedbackChannel)
+                    self.setListFeedbackCombobox()
             log.info("Configuration loaded.")
         self.updateDeviceConfigurationTab.emit()
         self.updateUI.emit(self.configuration)
@@ -260,7 +321,7 @@ class Manager(QObject):
         self.addLJDevices("USB")
         self.addLJDevices("TCP")
         
-        self.MBED_addUSBDevices(9600)
+        self.MBED_addUSBDevices(576000)
 
         # Boolean to indicate that the device list has finished refreshing.
         self.refreshing = False
@@ -283,7 +344,6 @@ class Manager(QObject):
         Baud_Rate = []  # For now assume all operating at 9600 - may change later so might need to add later on 
         # IP = []  # Don't think we need this for USB Serial(Mbed) devices 
         Num_Mbed_Devices, COM_PORTS, connectionType, ID_USB, VID_PID = K64F_Functions.List_All_Mbed_USB_Devices(baudrate)
-        print(Num_Mbed_Devices)
         for i in range(Num_Mbed_Devices):
             if ID_USB[i] not in ID_Existing:
                 deviceInformation = {}
@@ -297,6 +357,7 @@ class Manager(QObject):
                 deviceInformation["connection"] = connectionType[i]
                 deviceInformation["address"] = COM_PORTS[i]
                 deviceInformation["status"] = True
+                deviceInformation["baudrate"] = baudrate
                 self.deviceTableModel.appendRow(deviceInformation)
                 self.updateUI.emit(self.configuration)
                 
@@ -307,8 +368,10 @@ class Manager(QObject):
                 controlTable[1]["name"] = deviceInformation["name"] + " C2"
                 newDevice = {
                     "id": deviceInformation["id"],
+                    "Device Type" : deviceInformation["Device Type"],
                     "connection": deviceInformation["connection"],
                     "address": deviceInformation["address"],
+                    "baudrate": deviceInformation["baudrate"],
                     "acquisition": acquisitionTable,
                     "control" : controlTable
                 }
@@ -358,6 +421,7 @@ class Manager(QObject):
                 ljm.close(handle)
                 deviceInformation["id"] = ID[i]
                 deviceInformation["connection"] = connectionType[i]
+                deviceInformation["Device Type"] = "Labjack T7"
                 if mode == "USB":
                     deviceInformation["address"] = "N/A"
                 elif mode == "TCP":
@@ -373,6 +437,7 @@ class Manager(QObject):
                 controlTable[1]["name"] = deviceInformation["name"] + " C2"
                 newDevice = {
                     "id": deviceInformation["id"],
+                    "Device Type" : deviceInformation["Device Type"],
                     "connection": deviceInformation["connection"],
                     "address": deviceInformation["address"],
                     "acquisition": acquisitionTable,

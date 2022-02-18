@@ -35,3 +35,61 @@ def List_All_Mbed_USB_Devices(Buadrate = 115200):
                 connectionType.append(11)     # Added 10 onto definitions used by LJM library to avoid mixing up - however can change if confusing 
                 Serial_device.close()    # Close COM Port communication once info obtained 
     return(Num_Mbed_Devices, COM_PORTS, connectionType, ID_USB, VID_PID)
+
+
+
+def _Serial_Read_Raw_Bytes(Serial_Device, Expected_Bytes):
+    serialBytes = "" # Used to hold data coming over UART
+
+    serialBytes = Serial_Device.read(size=Expected_Bytes)
+    if(len(serialBytes) != Expected_Bytes):
+        print("Error", serialBytes)
+    else:
+        return serialBytes
+
+
+def _Decode_Raw_ADC(input, Num_Channels = 8):
+    data = []
+    if(len(input) != Num_Channels * 2):
+        print("Erorr with provided Raw ADC Data", len(input), (Num_Channels * 2))
+    else:
+        for x in range(Num_Channels):
+            data.append(np.int16(int.from_bytes(input[2*x : 2*x + 2], 'little')))
+    return data
+
+def _Convert_ADC_Raw(Raw_Reading, ADC_Resolution, Max_Min_Voltage): 
+    quant_step = (2 * Max_Min_Voltage) / (2**ADC_Resolution)
+    return Raw_Reading * quant_step
+
+def Read_ADC_Voltage(input, Num_Channels = 8, ADC_Resolution = 16, Max_Min_Voltage = 5):
+    Voltages = []
+    Raw_2s_comp_values = _Decode_Raw_ADC(input, Num_Channels)
+    # If invalid input: Raw_2s_comp_values will be an empty list, so return value will also be empty
+    for x in Raw_2s_comp_values:
+        Voltages.append(_Convert_ADC_Raw(x, ADC_Resolution, Max_Min_Voltage))
+    return Voltages
+
+
+def Read_Time_In_Secs(input, Num_Bytes = 2):
+    if(len(input) != Num_Bytes):
+        print("Erorr with provided RTC Data")
+    else:
+        return np.uint32(int.from_bytes(input, 'little'))
+
+def Read_Compressed_PWM_Duty(input, Num_Channels = 6):
+    Duty_Cycles = []
+    if(len(input) != Num_Channels):
+        print("Error with PWM data")
+    else:
+        for x in input:   # Auto conversion from bytes to int?? Seems to work anyways 
+            Duty_Cycles.append(x) 
+    return Duty_Cycles
+
+def Read_Sample(Serial_Device, Expected_Bytes):
+    Raw_Data = _Serial_Read_Raw_Bytes(Serial_Device, Expected_Bytes)
+    
+    Time = Read_Time_In_Secs(Raw_Data[0:4], 4)
+    Voltages = Read_ADC_Voltage(Raw_Data[4:20], 8)
+    PWM_Duties = Read_Compressed_PWM_Duty(Raw_Data[20:26], 6)
+
+    return Time, Voltages, PWM_Duties
