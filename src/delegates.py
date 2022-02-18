@@ -3,6 +3,8 @@ from PySide6.QtWidgets import QItemDelegate, QStyledItemDelegate, QStyle, QLineE
 from PySide6.QtGui import QIcon, QDoubleValidator, QPixmap, QColor
 from PySide6.QtCore import Qt, QEvent, QRect, QLocale, Signal
 
+import logging
+log = logging.getLogger(__name__)
 
 class CheckBoxDelegate(QItemDelegate):
     """
@@ -72,7 +74,12 @@ class ConnectionIconDelegate(QStyledItemDelegate):
         super().__init__()
     
     def paint(self, painter, option, index):
+<<<<<<< HEAD
         if self.darkmode == True:
+=======
+        model = index.model()
+        if self.darkmode == True: # 0-4 are Labjack Devices, 10-14 are Mbed Devices 
+>>>>>>> ef201362b9151a380c985dd5acef6b7b21de82f9
             if index.data(Qt.DisplayRole) == 0:
                 icon = QIcon("assets/sensors_off_white_24dp.svg")
             elif index.data(Qt.DisplayRole) == 1:
@@ -81,7 +88,11 @@ class ConnectionIconDelegate(QStyledItemDelegate):
                 icon = QIcon("assets/cable_white_24dp.svg")
             elif index.data(Qt.DisplayRole) == 4:
                 icon = QIcon("assets/wifi_white_24dp.svg")
+<<<<<<< HEAD
 
+=======
+            
+>>>>>>> ef201362b9151a380c985dd5acef6b7b21de82f9
             # Following are Mbed Devices 
             elif index.data(Qt.DisplayRole) == 10:
                 icon = QIcon("assets/sensors_off_white_24dp.svg")
@@ -100,7 +111,11 @@ class ConnectionIconDelegate(QStyledItemDelegate):
                 icon = QIcon("assets/cable_black_24dp.svg")
             elif index.data(Qt.DisplayRole) == 4:
                 icon = QIcon("assets/wifi_black_24dp.svg")
+<<<<<<< HEAD
 
+=======
+            
+>>>>>>> ef201362b9151a380c985dd5acef6b7b21de82f9
             # Following are Mbed Devices 
             elif index.data(Qt.DisplayRole) == 10: 
                 icon = QIcon("assets/sensors_off_black_24dp.svg")
@@ -110,6 +125,10 @@ class ConnectionIconDelegate(QStyledItemDelegate):
                 icon = QIcon("assets/cable_black_24dp.svg")
             elif index.data(Qt.DisplayRole) == 14:
                 icon = QIcon("assets/wifi_black_24dp.svg")
+<<<<<<< HEAD
+=======
+
+>>>>>>> ef201362b9151a380c985dd5acef6b7b21de82f9
         icon.paint(painter, option.rect, Qt.AlignCenter)
 
     def setIcon(self, darkmode):
